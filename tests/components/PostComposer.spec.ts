@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import PostComposer from '@/components/PostComposer.vue'
-import { MAX_CONTENT } from '@/lib/storage'
+import { MAX_CONTENT } from '@/lib/posts'
 
 async function write(wrapper: ReturnType<typeof mount>, text: string) {
   await wrapper.get('#content').setValue(text)

@@ -6,10 +6,8 @@ import SearchBar from '@/components/SearchBar.vue'
 import PostFeed from '@/components/PostFeed.vue'
 import ToastMessage from '@/components/ToastMessage.vue'
 import { usePostsStore } from '@/stores/posts'
-import { POSTS_KEY } from '@/lib/storage'
 
 const store = usePostsStore()
-store.init()
 
 const composer = ref<InstanceType<typeof PostComposer> | null>(null)
 const toastMessage = ref('')
@@ -26,8 +24,13 @@ function showToast(message: string, tone: 'info' | 'error' = 'info'): void {
   }, 3000)
 }
 
-function handleSubmit(payload: { author: string; content: string }): void {
-  const result = store.addPost(payload)
+async function refresh(): Promise<void> {
+  await store.reload()
+  if (store.error) showToast(store.error, 'error')
+}
+
+async function handleSubmit(payload: { author: string; content: string }): Promise<void> {
+  const result = await store.addPost(payload)
 
   if (!result.ok) {
     showToast(result.error ?? '保存失败，请稍后重试。', 'error')
@@ -38,30 +41,35 @@ function handleSubmit(payload: { author: string; content: string }): void {
   showToast('已经种进院子里啦')
 }
 
-function handleLike(id: string): void {
-  const result = store.toggleLike(id)
+async function handleLike(id: string): Promise<void> {
+  const result = await store.toggleLike(id)
   if (!result.ok && result.error) showToast(result.error, 'error')
 }
 
-function handleDelete(id: string): void {
-  const result = store.removePost(id)
-  showToast(result.ok ? '这条已经从院子里收走了' : result.error ?? '删除失败', result.ok ? 'info' : 'error')
+async function handleDelete(id: string): Promise<void> {
+  const result = await store.removePost(id)
+  showToast(
+    result.ok ? '这条已经从院子里收走了' : result.error ?? '删除失败',
+    result.ok ? 'info' : 'error'
+  )
 }
 
-function handleStorage(event: StorageEvent): void {
-  if (event.key !== null && event.key !== POSTS_KEY) return
-
-  store.reload()
-  showToast(store.error ?? '院子在其他标签页里更新了', store.error ? 'error' : 'info')
+/** 没有 localStorage 事件了，改用页面重新可见/聚焦时主动拉一次 */
+function handleVisibility(): void {
+  if (document.visibilityState === 'visible') void refresh()
 }
 
-onMounted(() => {
-  window.addEventListener('storage', handleStorage)
+onMounted(async () => {
+  window.addEventListener('focus', refresh)
+  document.addEventListener('visibilitychange', handleVisibility)
+
+  await store.init()
   if (store.error) showToast(store.error, 'error')
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('storage', handleStorage)
+  window.removeEventListener('focus', refresh)
+  document.removeEventListener('visibilitychange', handleVisibility)
   window.clearTimeout(toastTimer)
 })
 </script>
@@ -105,7 +113,7 @@ onBeforeUnmount(() => {
   </main>
 
   <footer class="site-footer">
-    <p>内容只保存在这台设备的浏览器里 · 不上传服务器</p>
+    <p>内容保存在服务端内存里 · 重启后清空</p>
   </footer>
 
   <ToastMessage :message="toastMessage" :tone="toastTone" />

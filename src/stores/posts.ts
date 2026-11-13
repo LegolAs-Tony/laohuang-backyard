@@ -1,16 +1,9 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import {
-  DEFAULT_AUTHOR,
-  MAX_AUTHOR,
-  MAX_CONTENT,
-  createId,
-  readAuthor,
-  readPosts,
-  writeAuthor,
-  writePosts
-} from '@/lib/storage'
-import type { Post } from '@/lib/storage'
+import { createPost, deletePost, fetchPosts, updatePostLiked } from '@/lib/api'
+import { MAX_AUTHOR, MAX_CONTENT, matchesQuery } from '@/lib/posts'
+import type { Post } from '@/lib/posts'
+import { readAuthor, writeAuthor } from '@/lib/preferences'
 
 export interface AddPostPayload {
   author: string
@@ -22,21 +15,15 @@ export interface ActionResult {
   error?: string
 }
 
-function matchesQuery(post: Post, keyword: string): boolean {
-  const needle = keyword.trim().toLowerCase()
-  if (!needle) return true
-
-  return (
-    post.content.toLowerCase().includes(needle) || post.author.toLowerCase().includes(needle)
-  )
-}
-
 export const usePostsStore = defineStore('posts', () => {
   /* ------------------------------------------------------------------ 状态 */
   const posts = ref<Post[]>([])
-  const author = ref('')
+  // 署名是纯界面偏好，同步读出来，避免输入框空一下再填上
+  const author = ref(readAuthor())
   const keyword = ref('')
   const error = ref<string | null>(null)
+  // 正在请求中的点赞 id，防止连点重复提交
+  const liking = new Set<string>()
 
   /* ------------------------------------------------------------ 派生状态 */
   const sortedPosts = computed(() =>
@@ -57,22 +44,29 @@ export const usePostsStore = defineStore('posts', () => {
   const isFiltering = computed(() => keyword.value.trim() !== '')
 
   /* -------------------------------------------------------------- 行为层 */
-  function load(): void {
-    const result = readPosts()
-    posts.value = result.posts
-    author.value = readAuthor()
-    error.value = result.error ?? null
+  async function load(): Promise<void> {
+    const result = await fetchPosts()
+
+    if (!result.ok) {
+      // 只提示不擦除：后端重启或网络瞬断时，已经渲染出来的内容不该凭空消失
+      error.value = result.error
+      return
+    }
+
+    posts.value = result.data
+    error.value = null
   }
 
-  function init(): void {
-    load()
+  function init(): Promise<void> {
+    return load()
   }
 
-  function reload(): void {
-    load()
+  /** 窗口重新可见/聚焦时调用，替代原来的多标签 storage 事件 */
+  function reload(): Promise<void> {
+    return load()
   }
 
-  function addPost({ author: rawAuthor, content }: AddPostPayload): ActionResult {
+  async function addPost({ author: rawAuthor, content }: AddPostPayload): Promise<ActionResult> {
     const trimmedContent = content.trim()
     const trimmedAuthor = rawAuthor.trim().slice(0, MAX_AUTHOR)
 
@@ -84,63 +78,65 @@ export const usePostsStore = defineStore('posts', () => {
       return { ok: false, error: `超过 ${MAX_CONTENT} 字了，删减一点再试。` }
     }
 
-    const post: Post = {
-      id: createId(),
-      author: trimmedAuthor || DEFAULT_AUTHOR,
-      content: trimmedContent,
-      createdAt: Date.now(),
-      liked: false
-    }
-
-    const next = [...posts.value, post]
-    const result = writePosts(next)
+    const result = await createPost({ author: trimmedAuthor, content: trimmedContent })
 
     if (!result.ok) {
-      error.value = result.error ?? '保存失败，请稍后重试。'
+      error.value = result.error
       return { ok: false, error: result.error }
     }
 
-    posts.value = next
-    author.value = trimmedAuthor
-    writeAuthor(trimmedAuthor)
+    // 期间可能有一次 focus 触发的 reload 已经把这条带回来了，按 id 去重再合并
+    posts.value = [...posts.value.filter((post) => post.id !== result.data.id), result.data]
+
+    // 匿名发布不覆盖已记住的署名
+    if (trimmedAuthor) {
+      author.value = trimmedAuthor
+      writeAuthor(trimmedAuthor)
+    }
     error.value = null
 
     // 当前筛选会把这天新内容藏起来时，顺手清空筛选，避免"发出去了却看不见"
-    if (keyword.value.trim() && !matchesQuery(post, keyword.value)) {
+    if (keyword.value.trim() && !matchesQuery(result.data, keyword.value)) {
       keyword.value = ''
     }
 
     return { ok: true }
   }
 
-  function toggleLike(id: string): ActionResult {
+  async function toggleLike(id: string): Promise<ActionResult> {
     const target = posts.value.find((post) => post.id === id)
     if (!target) return { ok: false }
 
-    const next = posts.value.map((post) =>
-      post.id === id ? { ...post, liked: !post.liked } : post
-    )
-    const result = writePosts(next)
+    // 连点保护：请求在途时忽略后续点击，否则两次都基于旧状态算出同一个目标值
+    if (liking.has(id)) return { ok: false }
 
-    if (!result.ok) {
-      error.value = result.error ?? '保存失败，请稍后重试。'
-      return { ok: false, error: result.error }
+    liking.add(id)
+    try {
+      const result = await updatePostLiked(id, !target.liked)
+
+      if (!result.ok) {
+        error.value = result.error
+        return { ok: false, error: result.error }
+      }
+
+      posts.value = posts.value.map((post) => (post.id === id ? result.data : post))
+      error.value = null
+      return { ok: true }
+    } finally {
+      liking.delete(id)
     }
-
-    posts.value = next
-    return { ok: true }
   }
 
-  function removePost(id: string): ActionResult {
-    const next = posts.value.filter((post) => post.id !== id)
-    const result = writePosts(next)
+  async function removePost(id: string): Promise<ActionResult> {
+    const result = await deletePost(id)
 
     if (!result.ok) {
-      error.value = result.error ?? '保存失败，请稍后重试。'
+      error.value = result.error
       return { ok: false, error: result.error }
     }
 
-    posts.value = next
+    posts.value = posts.value.filter((post) => post.id !== id)
+    error.value = null
     return { ok: true }
   }
 

@@ -1,45 +1,46 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import App from '@/App.vue'
-import { POSTS_KEY } from '@/lib/storage'
-import type { Post } from '@/lib/storage'
+import type { Post } from '@/lib/posts'
+import { installFakeApi } from '../helpers/fake-api'
+import type { FakeApi } from '../helpers/fake-api'
 
-function seed(posts: Partial<Post>[]): void {
-  window.localStorage.setItem(
-    POSTS_KEY,
-    JSON.stringify(
-      posts.map((post, index) => ({
-        id: post.id ?? `p${index}`,
-        author: post.author ?? '老黄',
-        content: post.content ?? `第 ${index} 条`,
-        createdAt: post.createdAt ?? 1_700_000_000_000 + index,
-        liked: post.liked ?? false
-      }))
-    )
-  )
-}
+// App 会注册 window/document 监听器，用例结束必须卸载，否则跨用例串味
+const mounted: Array<{ unmount: () => void }> = []
 
-function mountApp() {
+afterEach(() => {
+  while (mounted.length) mounted.pop()?.unmount()
+})
+
+async function mountApp(seed: Partial<Post>[] = []): Promise<{
+  wrapper: ReturnType<typeof mount>
+  api: FakeApi
+}> {
+  const api = installFakeApi(seed)
   const pinia = createPinia()
   setActivePinia(pinia)
-  return mount(App, { global: { plugins: [pinia] } })
+
+  const wrapper = mount(App, { global: { plugins: [pinia] } })
+  mounted.push(wrapper)
+  await flushPromises()
+
+  return { wrapper, api }
 }
 
 describe('App 集成', () => {
-  it('没有任何数据时展示空态', () => {
-    const wrapper = mountApp()
+  it('接口没有数据时展示空态', async () => {
+    const { wrapper } = await mountApp()
+
     expect(wrapper.get('#empty').classes()).toContain('is-visible')
     expect(wrapper.findAll('.card')).toHaveLength(0)
   })
 
-  it('读取本地数据并按时间倒序渲染', () => {
-    seed([
+  it('读取接口数据并按时间倒序渲染', async () => {
+    const { wrapper } = await mountApp([
       { id: 'old', content: '早一点', createdAt: 1000 },
       { id: 'new', content: '晚一点', createdAt: 2000 }
     ])
-
-    const wrapper = mountApp()
     const cards = wrapper.findAll('.card')
 
     expect(cards).toHaveLength(2)
@@ -47,27 +48,25 @@ describe('App 集成', () => {
     expect(cards[1].get('.card__body').text()).toBe('早一点')
   })
 
-  it('发布后列表与本地存储同时更新', async () => {
-    const wrapper = mountApp()
+  it('发布后列表更新、接口收到请求、正文框清空', async () => {
+    const { wrapper, api } = await mountApp()
 
     await wrapper.get('#author').setValue('老黄')
     await wrapper.get('#content').setValue('今天种了番茄')
     await wrapper.get('form').trigger('submit')
+    await flushPromises()
 
     expect(wrapper.findAll('.card')).toHaveLength(1)
     expect(wrapper.get('.card__body').text()).toBe('今天种了番茄')
-
-    const stored = JSON.parse(window.localStorage.getItem(POSTS_KEY) ?? '[]')
-    expect(stored).toHaveLength(1)
+    expect(api.posts).toHaveLength(1)
     expect((wrapper.get('#content').element as HTMLTextAreaElement).value).toBe('')
   })
 
   it('搜索时按关键词过滤并显示命中数', async () => {
-    seed([
+    const { wrapper } = await mountApp([
       { id: 'a', content: '番茄红了' },
       { id: 'b', content: '黄瓜熟了' }
     ])
-    const wrapper = mountApp()
 
     await wrapper.get('#search').setValue('番茄')
 
@@ -76,42 +75,49 @@ describe('App 集成', () => {
   })
 
   it('搜索无结果时展示无结果空态', async () => {
-    seed([{ id: 'a', content: '番茄红了' }])
-    const wrapper = mountApp()
+    const { wrapper } = await mountApp([{ id: 'a', content: '番茄红了' }])
 
     await wrapper.get('#search').setValue('西瓜')
 
     expect(wrapper.get('#no-result').classes()).toContain('is-visible')
   })
 
-  it('点赞后状态写入本地存储', async () => {
-    seed([{ id: 'a', content: '番茄红了', liked: false }])
-    const wrapper = mountApp()
+  it('点赞后写入服务端并更新按钮状态', async () => {
+    const { wrapper, api } = await mountApp([{ id: 'a', content: '番茄红了', liked: false }])
 
     await wrapper.get('[data-action="like"]').trigger('click')
+    await flushPromises()
 
-    const stored = JSON.parse(window.localStorage.getItem(POSTS_KEY) ?? '[]')
-    expect(stored[0].liked).toBe(true)
+    expect(api.posts[0].liked).toBe(true)
     expect(wrapper.get('[data-action="like"]').attributes('aria-pressed')).toBe('true')
   })
 
-  it('删除后卡片消失且存储同步', async () => {
-    seed([{ id: 'a' }])
-    const wrapper = mountApp()
+  it('删除后卡片消失且服务端同步', async () => {
+    const { wrapper, api } = await mountApp([{ id: 'a' }])
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     await wrapper.get('[data-action="delete"]').trigger('click')
+    await flushPromises()
 
     expect(wrapper.findAll('.card')).toHaveLength(0)
-    expect(JSON.parse(window.localStorage.getItem(POSTS_KEY) ?? '[]')).toHaveLength(0)
+    expect(api.posts).toHaveLength(0)
   })
 
-  it('其他标签页写入后自动同步', async () => {
-    const wrapper = mountApp()
-    seed([{ content: '别的标签页写的' }])
+  it('窗口重新获得焦点时刷新列表', async () => {
+    const { wrapper, api } = await mountApp()
+    expect(wrapper.findAll('.card')).toHaveLength(0)
 
-    window.dispatchEvent(new StorageEvent('storage', { key: POSTS_KEY }))
-    await wrapper.vm.$nextTick()
+    api.posts = [
+      {
+        id: 'p9',
+        author: '老黄',
+        content: '别的标签页写的',
+        createdAt: 1_700_000_000_000,
+        liked: false
+      }
+    ]
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
 
     expect(wrapper.findAll('.card')).toHaveLength(1)
   })

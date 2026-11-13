@@ -50,7 +50,7 @@ onBeforeUnmount(() => {
 
       <span class="brand__badge">
         <span class="brand__dot" aria-hidden="true" />
-        仅存本机
+        服务端内存
       </span>
     </div>
   </header>

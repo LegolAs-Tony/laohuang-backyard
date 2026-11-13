@@ -1,7 +1,7 @@
 /**
  * 浏览器内验收（零依赖）
  *
- * 流程：起一个只读静态服务托管 dist/ → 启动本机 Chrome/Edge 无头模式
+ * 流程：启动 Hono 服务（同源托管 dist/ 与 /api）→ 启动本机 Chrome/Edge 无头模式
  *      → 通过 DevTools 协议真实点击 / 输入 / 刷新 → 断言 + 截图 → 清理。
  *
  * 用法：
@@ -9,28 +9,19 @@
  *   CHROME_PATH=... node scripts/acceptance.mjs
  */
 import { spawn } from 'node:child_process'
-import { createReadStream, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:http'
-import { dirname, extname, join, normalize, resolve } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const DIST = join(ROOT, 'dist')
+const DIST_INDEX = join(ROOT, 'dist', 'index.html')
 const SHOT_DIR = join(ROOT, '.acceptance')
 const PROFILE_DIR = join(ROOT, '.acceptance', 'profile')
 
 const PORT = Number(process.env.ACCEPT_PORT ?? 4178)
 const DEBUG_PORT = Number(process.env.ACCEPT_DEBUG_PORT ?? 9333)
-const APP_URL = `http://127.0.0.1:${PORT}/index.html`
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon'
-}
+const BASE_URL = `http://127.0.0.1:${PORT}`
+const APP_URL = `${BASE_URL}/index.html`
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 const results = []
@@ -52,25 +43,59 @@ function findBrowser() {
     '/usr/bin/chromium'
   ].filter(Boolean)
 
-  return candidates.find((candidate) => existsSync(candidate))
+  const found = candidates.find((candidate) => existsSync(candidate))
+  if (found) return found
+
+  // 本机可能只有 Puppeteer/Playwright 缓存的 Chromium
+  const snapshotDir = join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.chromium-browser-snapshots', 'chromium')
+  if (!existsSync(snapshotDir)) return undefined
+
+  for (const build of readdirSync(snapshotDir)) {
+    const candidate = join(snapshotDir, build, 'chrome-win', 'chrome.exe')
+    if (existsSync(candidate)) return candidate
+  }
+
+  return undefined
 }
 
-function startStaticServer() {
-  const server = createServer((request, response) => {
-    const urlPath = decodeURIComponent((request.url ?? '/').split('?')[0])
-    const target = normalize(join(DIST, urlPath === '/' ? 'index.html' : urlPath))
-
-    if (!target.startsWith(normalize(DIST))) {
-      response.writeHead(403).end()
-      return
+function startServer() {
+  const child = spawn(
+    process.execPath,
+    [join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(ROOT, 'server', 'src', 'index.ts')],
+    {
+      cwd: ROOT,
+      env: { ...process.env, PORT: String(PORT) },
+      stdio: ['ignore', 'pipe', 'pipe']
     }
+  )
 
-    const file = existsSync(target) ? target : join(DIST, 'index.html')
-    response.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' })
-    createReadStream(file).pipe(response)
-  })
+  child.stdout.on('data', (chunk) => process.env.ACCEPT_VERBOSE && console.log(`[server] ${chunk}`))
+  child.stderr.on('data', (chunk) => process.stderr.write(`[server] ${chunk}`))
 
-  return new Promise((done) => server.listen(PORT, '127.0.0.1', () => done(server)))
+  return child
+}
+
+/** 端口上已经有服务时直接失败，否则会连到旧进程，用旧构建产物跑出假 PASS */
+async function isPortBusy() {
+  try {
+    await fetch(`${BASE_URL}/api/health`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      const response = await fetch(`${BASE_URL}/api/health`)
+      if (response.ok) return
+    } catch {
+      /* 服务还没起来 */
+    }
+    await sleep(200)
+  }
+  throw new Error('后端服务未就绪')
 }
 
 function connect(wsUrl) {
@@ -159,6 +184,15 @@ async function runChecks(cdp) {
     throw new Error(`等待元素超时: ${selector}`)
   }
 
+  async function waitUntil(expression, timeout = 5000) {
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline) {
+      if (await evaluate(expression)) return true
+      await sleep(100)
+    }
+    return false
+  }
+
   async function click(selector) {
     const point = await evaluate(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)});
@@ -204,7 +238,8 @@ async function runChecks(cdp) {
   }
 
   const count = () => evaluate(`document.querySelectorAll('.card').length`)
-  const store = () => evaluate(`JSON.parse(localStorage.getItem('lyd.posts.v1') || '[]')`)
+  const serverPosts = () => evaluate(`fetch('/api/posts').then((r) => r.json()).then((body) => body.posts)`)
+  const resetServer = () => evaluate(`fetch('/api/posts', { method: 'DELETE' }).then(() => true)`)
   const text = (selector) =>
     evaluate(`document.querySelector(${JSON.stringify(selector)}).textContent.trim()`)
   const pressCtrlEnter = async () => {
@@ -218,7 +253,7 @@ async function runChecks(cdp) {
   const reload = async () => {
     await cdp.send('Page.reload')
     await waitFor('#app .composer')
-    await sleep(300)
+    await sleep(400)
   }
   const shot = async (name) => {
     const image = await cdp.send('Page.captureScreenshot', { format: 'png' })
@@ -228,6 +263,8 @@ async function runChecks(cdp) {
   /* -------------------------------------------------------------- 用例 */
   await cdp.send('Page.navigate', { url: APP_URL })
   await waitFor('#app .composer')
+  await resetServer()
+  // 署名记忆仍放在浏览器，清掉才能验证「留空回退默认署名」
   await evaluate('localStorage.clear()')
   await reload()
 
@@ -246,19 +283,23 @@ async function runChecks(cdp) {
   check('正文输入框已清空', (await evaluate(`document.querySelector('#content').value`)) === '')
   check('署名保留在输入框', (await evaluate(`document.querySelector('#author').value`)) === '老黄')
 
-  const stored = await store()
+  const stored = await serverPosts()
   check(
-    '本地存储写入 1 条且字段完整',
+    '后端接口写入 1 条且字段完整',
     stored.length === 1 && Boolean(stored[0].id) && stored[0].liked === false &&
       typeof stored[0].createdAt === 'number'
+  )
+  check(
+    '动态不再写入 localStorage',
+    (await evaluate(`localStorage.getItem('lyd.posts.v1')`)) === null
   )
 
   await click('.card [data-action="like"]')
   check(
     '点赞后 aria-pressed=true',
-    (await evaluate(`document.querySelector('.card [data-action="like"]').getAttribute('aria-pressed')`)) === 'true'
+    await waitUntil(`document.querySelector('.card [data-action="like"]').getAttribute('aria-pressed') === 'true'`)
   )
-  check('点赞状态已持久化', (await store())[0].liked === true)
+  check('点赞状态已写入后端', await waitUntil(`fetch('/api/posts').then((r) => r.json()).then((b) => b.posts[0].liked === true)`))
 
   await typeInto('#author', '')
   await typeInto('#content', '番茄红了第一颗')
@@ -288,7 +329,7 @@ async function runChecks(cdp) {
   check('点清除后恢复 2 张卡片', (await count()) === 2)
 
   await reload()
-  check('刷新后数据仍在', (await count()) === 2)
+  check('刷新后数据仍在（服务端内存）', (await count()) === 2)
   check(
     '刷新后点赞状态保留',
     await evaluate(`Array.from(document.querySelectorAll('.card [data-action="like"]'))
@@ -302,9 +343,8 @@ async function runChecks(cdp) {
   await shot('desktop.png')
 
   await click('.card [data-action="delete"]')
-  await sleep(600)
-  check('确认删除后剩 1 张卡片', (await count()) === 1)
-  check('删除已同步到存储', (await store()).length === 1)
+  check('确认删除后剩 1 张卡片', await waitUntil(`document.querySelectorAll('.card').length === 1`))
+  check('删除已同步到后端', (await serverPosts()).length === 1)
 
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 390, height: 844, deviceScaleFactor: 1, mobile: true
@@ -326,7 +366,7 @@ async function runChecks(cdp) {
 }
 
 async function main() {
-  if (!existsSync(join(DIST, 'index.html'))) {
+  if (!existsSync(DIST_INDEX)) {
     console.error('缺少 dist/index.html，请先运行 npm run build')
     process.exit(1)
   }
@@ -337,27 +377,36 @@ async function main() {
     process.exit(1)
   }
 
+  if (await isPortBusy()) {
+    console.error(`端口 ${PORT} 已被占用，请先结束旧进程或换 ACCEPT_PORT`)
+    process.exit(1)
+  }
+
   mkdirSync(SHOT_DIR, { recursive: true })
 
-  const server = await startStaticServer()
-  const chrome = spawn(
-    browser,
-    [
-      '--headless=new',
-      '--no-sandbox',
-      '--disable-gpu',
-      '--no-first-run',
-      '--disable-extensions',
-      '--hide-scrollbars',
-      `--remote-debugging-port=${DEBUG_PORT}`,
-      `--user-data-dir=${PROFILE_DIR}`,
-      '--window-size=1280,1100',
-      'about:blank'
-    ],
-    { stdio: 'ignore' }
-  )
+  const server = startServer()
+  let chrome
 
   try {
+    await waitForServer()
+
+    chrome = spawn(
+      browser,
+      [
+        '--headless=new',
+        '--no-sandbox',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-extensions',
+        '--hide-scrollbars',
+        `--remote-debugging-port=${DEBUG_PORT}`,
+        `--user-data-dir=${PROFILE_DIR}`,
+        '--window-size=1280,1100',
+        'about:blank'
+      ],
+      { stdio: 'ignore' }
+    )
+
     await waitForDevtools()
 
     const target = await (
@@ -378,8 +427,8 @@ async function main() {
     console.log('FAIL 验收流程异常 | ' + error.message)
     results.push({ name: '验收流程异常', ok: false })
   } finally {
-    chrome.kill()
-    server.close()
+    chrome?.kill()
+    server.kill()
     await sleep(600)
     try {
       rmSync(PROFILE_DIR, { recursive: true, force: true })

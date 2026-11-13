@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PostCard from '@/components/PostCard.vue'
-import type { Post } from '@/lib/storage'
+import type { Post } from '@/lib/posts'
 
 function makePost(overrides: Partial<Post> = {}): Post {
   return {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import PostCard from '@/components/PostCard.vue'
-import type { Post } from '@/lib/storage'
+import type { Post } from '@/lib/posts'
 
 defineProps<{
   posts: Post[]

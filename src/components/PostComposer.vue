@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { MAX_AUTHOR, MAX_CONTENT } from '@/lib/storage'
+import { MAX_AUTHOR, MAX_CONTENT } from '@/lib/posts'
 
 interface SubmitPayload {
   author: string

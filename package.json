@@ -3,9 +3,11 @@
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "老黄的后花园 — Vue 3 + Pinia + LocalStorage 的轻量发布小站",
+  "description": "老黄的后花园 — Vue 3 + Pinia + Hono 内存存储的轻量发布小站",
   "scripts": {
     "dev": "vite",
+    "server": "tsx watch server/src/index.ts",
+    "start": "tsx server/src/index.ts",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -14,6 +16,8 @@
     "accept": "npm run build && node scripts/acceptance.mjs"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.8",
+    "hono": "^4.13.18",
     "pinia": "^3.0.1",
     "vue": "^3.5.13"
   },
@@ -22,6 +26,7 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^26.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
     "vitest": "^3.0.5"
