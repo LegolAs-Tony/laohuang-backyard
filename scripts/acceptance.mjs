@@ -300,6 +300,31 @@ async function runChecks(cdp) {
     await waitUntil(`document.querySelector('.card [data-action="like"]').getAttribute('aria-pressed') === 'true'`)
   )
   check('点赞状态已写入后端', await waitUntil(`fetch('/api/posts').then((r) => r.json()).then((b) => b.posts[0].liked === true)`))
+  check('点赞计数显示为 1', (await text('.card [data-action="like"] .card__like-count')) === '1')
+  check(
+    '后端记录点赞总数',
+    await evaluate(`fetch('/api/posts').then((r) => r.json()).then((b) => b.posts[0].likes === 1)`)
+  )
+
+  await click('.card [data-action="like"]')
+  check(
+    '取消点赞后计数归零',
+    await waitUntil(
+      `document.querySelector('.card [data-action="like"] .card__like-count').textContent.trim() === '0'`
+    )
+  )
+  check(
+    '取消点赞后后端总数归零',
+    await evaluate(`fetch('/api/posts').then((r) => r.json()).then((b) => b.posts[0].likes === 0)`)
+  )
+
+  await click('.card [data-action="like"]')
+  check(
+    '再次点赞计数回到 1',
+    await waitUntil(
+      `document.querySelector('.card [data-action="like"] .card__like-count').textContent.trim() === '1'`
+    )
+  )
 
   await typeInto('#author', '')
   await typeInto('#content', '番茄红了第一颗')
@@ -309,6 +334,33 @@ async function runChecks(cdp) {
     '留空署名回退「花园访客」',
     (await evaluate(`document.querySelectorAll('.card .card__author')[0].textContent`)) === '花园访客'
   )
+
+  await click('.card [data-action="favorite"]')
+  check(
+    '收藏后 aria-pressed=true',
+    await waitUntil(
+      `document.querySelector('.card [data-action="favorite"]').getAttribute('aria-pressed') === 'true'`
+    )
+  )
+  check(
+    '收藏状态已写入后端',
+    await waitUntil(
+      `fetch('/api/posts').then((r) => r.json()).then((b) => b.posts.some((post) => post.favorited === true))`
+    )
+  )
+
+  await click('#view-favorites')
+  await sleep(350)
+  check('只看收藏只剩 1 张卡片', (await count()) === 1)
+  check('收藏视图统计文案', (await text('#feed-stat')) === '收藏 1 条')
+  check(
+    '收藏页签处于选中态',
+    (await evaluate(`document.querySelector('#view-favorites').getAttribute('aria-pressed')`)) === 'true'
+  )
+
+  await click('#view-all')
+  await sleep(350)
+  check('切回全部恢复 2 张卡片', (await count()) === 2)
 
   await typeInto('#search', '番茄')
   await sleep(300)
@@ -335,6 +387,31 @@ async function runChecks(cdp) {
     await evaluate(`Array.from(document.querySelectorAll('.card [data-action="like"]'))
       .some((btn) => btn.getAttribute('aria-pressed') === 'true')`)
   )
+  check(
+    '刷新后点赞计数保留',
+    await evaluate(`Array.from(document.querySelectorAll('.card__like-count'))
+      .some((el) => el.textContent.trim() === '1')`)
+  )
+
+  await click('#view-favorites')
+  await sleep(350)
+  check('刷新后收藏仍在（只看收藏 1 张）', (await count()) === 1)
+
+  await click('.card [data-action="favorite"]')
+  check(
+    '取消收藏后展示专属空态',
+    await waitUntil(
+      `document.querySelector('#favorites-empty').classList.contains('is-visible')`
+    )
+  )
+  check(
+    '收藏空态下不误报「没搜到」',
+    (await evaluate(`document.querySelector('#no-result').classList.contains('is-visible')`)) === false
+  )
+
+  await click('#view-all')
+  await sleep(350)
+  check('切回全部仍有 2 张卡片', (await count()) === 2)
 
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false
