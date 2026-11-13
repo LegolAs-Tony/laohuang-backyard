@@ -1,0 +1,28 @@
+{
+  "name": "laohuang-backyard",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "老黄的后花园 — Vue 3 + Pinia + LocalStorage 的轻量发布小站",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pinia": "^3.0.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}
