@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>老黄的后花园</title>
+<meta name="description" content="老黄的后花园 —— 一方自己的小院，想说什么就种下一句。所有内容只保存在你自己的浏览器里。">
+<meta name="theme-color" content="#FAF7F0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%232F6B4F'/%3E%3Cpath d='M16 25c0-6 3-10 8-12-1 7-4 10-8 12Z' fill='%23F2C14E'/%3E%3Cpath d='M16 25c0-5-2-8-6-10 1 6 3 8 6 10Z' fill='%23FFFFFF' opacity='.85'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="ambient" aria-hidden="true">
+  <span class="ambient__wash ambient__wash--top"></span>
+  <span class="ambient__wash ambient__wash--bottom"></span>
+  <span class="ambient__grain"></span>
+</div>
+
+<header class="site-header" id="site-header">
+  <div class="site-header__inner">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M16 27c0-8 3.6-13.4 10-15.6C25 20.2 21 25 16 27Z" fill="currentColor" opacity=".92"/>
+          <path d="M16 27c0-6.6-2.8-10.8-8-12.6C9 20.6 12 24.8 16 27Z" fill="currentColor" opacity=".55"/>
+          <path d="M16 27V14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="brand__text">
+        <h1 class="brand__title">老黄的后花园</h1>
+        <p class="brand__subtitle">今天也来后花园坐坐</p>
+      </div>
+    </div>
+    <span class="brand__badge">
+      <span class="brand__dot" aria-hidden="true"></span>
+      仅存本机
+    </span>
+  </div>
+</header>
+
+<main class="page">
+
+  <section class="composer" aria-labelledby="composer-title">
+    <h2 class="sr-only" id="composer-title">种下一条新的动态</h2>
+
+    <form class="composer__form" id="post-form" novalidate>
+      <div class="composer__top">
+        <label class="field" for="author">
+          <span class="field__label">署名</span>
+          <input
+            class="field__input"
+            id="author"
+            name="author"
+            type="text"
+            maxlength="20"
+            placeholder="花园访客"
+            autocomplete="off"
+            spellcheck="false">
+        </label>
+        <span class="composer__hint">
+          <kbd>Ctrl</kbd><span class="composer__slash">/</span><kbd>⌘</kbd>
+          <span class="composer__plus">+</span>
+          <kbd>Enter</kbd>
+          快速种下
+        </span>
+      </div>
+
+      <label class="sr-only" for="content">动态内容</label>
+      <textarea
+        class="composer__textarea"
+        id="content"
+        name="content"
+        rows="4"
+        maxlength="500"
+        placeholder="此刻的花园里，是什么样子？"
+        spellcheck="false"></textarea>
+
+      <div class="composer__footer">
+        <span class="counter" id="counter">
+          <strong id="counter-current">0</strong><span class="counter__sep">/</span><span>500</span>
+        </span>
+        <button class="btn btn--primary" id="submit-btn" type="submit">
+          <span class="btn__label">种下这条</span>
+          <svg class="btn__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 19V5m0 0-5.2 5.2M12 5l5.2 5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <p class="composer__error" id="composer-error" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <section class="filter" aria-labelledby="filter-title">
+    <h2 class="sr-only" id="filter-title">在院子里找一找</h2>
+    <div class="filter__bar">
+      <svg class="filter__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="11" cy="11" r="6.2" stroke="currentColor" stroke-width="1.6"/>
+        <path d="m15.6 15.6 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <label class="sr-only" for="search">按关键词筛选</label>
+      <input
+        class="filter__input"
+        id="search"
+        type="search"
+        placeholder="搜一搜正文或署名……"
+        autocomplete="off"
+        spellcheck="false">
+      <button class="filter__clear" id="search-clear" type="button" hidden>清除</button>
+    </div>
+    <p class="filter__stat" id="feed-stat" aria-live="polite">共 0 条</p>
+  </section>
+
+  <section class="feed" aria-labelledby="feed-title">
+    <h2 class="sr-only" id="feed-title">院子里的动态</h2>
+    <div class="feed__list" id="feed"></div>
+
+    <div class="empty" id="empty" role="status">
+      <span class="empty__art" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none">
+          <path d="M20 34h24l-3 18a4 4 0 0 1-4 3.4H27a4 4 0 0 1-4-3.4L20 34Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+          <path d="M17 34h30" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M32 30c0-7 3.4-11.6 9-13.6C41 24 37.4 28 32 30Z" fill="currentColor" opacity=".5"/>
+          <path d="M32 30c0-6-2.8-9.8-7.6-11.4C24.4 24.6 27.4 28 32 30Z" fill="currentColor" opacity=".3"/>
+          <path d="M32 30V21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <p class="empty__text">院子还空着，种下第一条吧</p>
+      <button class="btn btn--ghost" id="empty-action" type="button">写点什么</button>
+    </div>
+
+    <div class="no-result" id="no-result" role="status">
+      <span class="no-result__art" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none">
+          <circle cx="28" cy="28" r="14" stroke="currentColor" stroke-width="2.2"/>
+          <path d="m38.5 38.5 11 11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M23 26.5h10M23 32h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <p class="no-result__text">院子里没有找到这几个字</p>
+      <button class="btn btn--ghost" id="no-result-action" type="button">清空筛选</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <p>内容只保存在这台设备的浏览器里 · 不上传服务器</p>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
