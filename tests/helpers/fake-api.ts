@@ -31,13 +31,19 @@ export function installFakeApi(seed: Partial<Post>[] = []): FakeApi {
   let counter = seed.length
 
   const api: FakeApi = {
-    posts: seed.map((post, index) => ({
-      id: post.id ?? `p${index + 1}`,
-      author: post.author ?? '老黄',
-      content: post.content ?? `第 ${index + 1} 条`,
-      createdAt: post.createdAt ?? 1_700_000_000_000 + index,
-      liked: post.liked ?? false
-    })),
+    posts: seed.map((post, index) => {
+      const liked = post.liked ?? false
+      return {
+        id: post.id ?? `p${index + 1}`,
+        author: post.author ?? '老黄',
+        content: post.content ?? `第 ${index + 1} 条`,
+        createdAt: post.createdAt ?? 1_700_000_000_000 + index,
+        liked,
+        // 点赞数与点赞状态在种子里保持一致，避免出现「已赞但 0 个赞」的假数据
+        likes: post.likes ?? (liked ? 1 : 0),
+        favorited: post.favorited ?? false
+      }
+    }),
     calls: [],
     failMode: 'none'
   }
@@ -74,7 +80,9 @@ export function installFakeApi(seed: Partial<Post>[] = []): FakeApi {
           author: String(body?.author ?? '').trim() || DEFAULT_AUTHOR,
           content,
           createdAt: 1_700_000_100_000 + counter,
-          liked: false
+          liked: false,
+          likes: 0,
+          favorited: false
         }
         api.posts = [...api.posts, post]
         return json({ post }, 201)
@@ -87,7 +95,14 @@ export function installFakeApi(seed: Partial<Post>[] = []): FakeApi {
         if (!target) return json({ error: { code: 'not_found', message: ERROR.not_found } }, 404)
 
         if (method === 'PATCH') {
-          target.liked = body?.liked === true
+          // 契约：body 里出现哪个字段就改哪个，两者可以同时出现
+          if (typeof body?.liked === 'boolean' && body.liked !== target.liked) {
+            target.liked = body.liked
+            target.likes = Math.max(0, target.likes + (body.liked ? 1 : -1))
+          }
+          if (typeof body?.favorited === 'boolean') {
+            target.favorited = body.favorited
+          }
           return json({ post: { ...target } })
         }
 

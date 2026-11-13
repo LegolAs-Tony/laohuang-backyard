@@ -7,9 +7,16 @@ import { formatFull, formatTime, toIsoString } from '@/lib/time'
 const HEART_PATH =
   'M12 20.2c-.3 0-.6-.1-.9-.3C6.1 16.2 3 13.3 3 9.9 3 7.2 5.1 5 7.7 5c1.5 0 3 .7 4.3 2 1.3-1.3 2.8-2 4.3-2C18.9 5 21 7.2 21 9.9c0 3.4-3.1 6.3-8.1 10-.3.2-.6.3-.9.3Z'
 
+const STAR_PATH =
+  'M12 3.4l2.68 5.43 5.99.87-4.33 4.23 1.02 5.96L12 17.06l-5.36 2.83 1.02-5.96-4.33-4.23 5.99-.87L12 3.4Z'
+
 const props = withDefaults(defineProps<{ post: Post; query?: string }>(), { query: '' })
 
-const emit = defineEmits<{ like: [id: string]; delete: [id: string] }>()
+const emit = defineEmits<{
+  like: [id: string]
+  favorite: [id: string]
+  delete: [id: string]
+}>()
 
 const AVATAR_VARIANTS = 6
 
@@ -68,6 +75,28 @@ function requestDelete(): void {
             />
           </svg>
           <span class="card__action-icon">{{ post.liked ? '已赞' : '赞' }}</span>
+          <span class="card__like-count">{{ post.likes }}</span>
+        </button>
+
+        <button
+          type="button"
+          class="card__action card__action--favorite"
+          data-action="favorite"
+          :aria-pressed="post.favorited ? 'true' : 'false'"
+          :aria-label="post.favorited ? '取消收藏' : '收藏这条动态'"
+          @click="emit('favorite', post.id)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              :d="STAR_PATH"
+              :fill="post.favorited ? 'currentColor' : 'none'"
+              :fill-opacity="post.favorited ? '0.9' : '0'"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span class="card__action-icon">{{ post.favorited ? '已收藏' : '收藏' }}</span>
         </button>
 
         <button

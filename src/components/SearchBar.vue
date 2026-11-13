@@ -1,24 +1,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { PostView } from '@/lib/posts'
 
-const props = defineProps<{
-  modelValue: string
-  total: number
-  matchCount: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: string
+    total: number
+    matchCount: number
+    view?: PostView
+    favoriteCount?: number
+  }>(),
+  { view: 'all', favoriteCount: 0 }
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  'update:view': [view: PostView]
   clear: []
 }>()
 
 const isFiltering = computed(() => props.modelValue.trim() !== '')
 
-const statText = computed(() =>
-  isFiltering.value
-    ? `共 ${props.total} 条 · 命中 ${props.matchCount} 条`
-    : `共 ${props.total} 条`
-)
+const statText = computed(() => {
+  const base =
+    props.view === 'favorites' ? `收藏 ${props.favoriteCount} 条` : `共 ${props.total} 条`
+  return isFiltering.value ? `${base} · 命中 ${props.matchCount} 条` : base
+})
 
 function handleInput(event: Event): void {
   emit('update:modelValue', (event.target as HTMLInputElement).value)
@@ -59,6 +66,29 @@ function handleInput(event: Event): void {
       </button>
     </div>
 
-    <p id="feed-stat" class="filter__stat" aria-live="polite">{{ statText }}</p>
+    <div class="filter__meta">
+      <div class="filter__tabs" role="group" aria-label="切换查看范围">
+        <button
+          id="view-all"
+          class="filter__tab"
+          type="button"
+          :aria-pressed="view === 'all' ? 'true' : 'false'"
+          @click="emit('update:view', 'all')"
+        >
+          全部
+        </button>
+        <button
+          id="view-favorites"
+          class="filter__tab"
+          type="button"
+          :aria-pressed="view === 'favorites' ? 'true' : 'false'"
+          @click="emit('update:view', 'favorites')"
+        >
+          收藏
+        </button>
+      </div>
+
+      <p id="feed-stat" class="filter__stat" aria-live="polite">{{ statText }}</p>
+    </div>
   </section>
 </template>

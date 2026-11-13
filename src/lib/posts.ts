@@ -4,7 +4,13 @@ export interface Post {
   content: string
   createdAt: number
   liked: boolean
+  /** 点赞总数，由服务端维护；0 表示没人赞过 */
+  likes: number
+  favorited: boolean
 }
+
+/** 动态列表的两种视图：全部 / 只看收藏 */
+export type PostView = 'all' | 'favorites'
 
 export const MAX_CONTENT = 500
 export const MAX_AUTHOR = 20
