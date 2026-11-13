@@ -46,6 +46,19 @@ async function handleLike(id: string): Promise<void> {
   if (!result.ok && result.error) showToast(result.error, 'error')
 }
 
+async function handleFavorite(id: string): Promise<void> {
+  const result = await store.toggleFavorite(id)
+
+  if (!result.ok) {
+    if (result.error) showToast(result.error, 'error')
+    return
+  }
+
+  // 以服务端回来的状态为准，避免用本地旧值猜文案
+  const favorited = store.posts.find((post) => post.id === id)?.favorited
+  showToast(favorited ? '已经收进收藏啦' : '已从收藏里取出')
+}
+
 async function handleDelete(id: string): Promise<void> {
   const result = await store.removePost(id)
   showToast(
@@ -96,7 +109,10 @@ onBeforeUnmount(() => {
       :model-value="store.keyword"
       :total="store.total"
       :match-count="store.matchCount"
+      :view="store.view"
+      :favorite-count="store.favoriteCount"
       @update:model-value="store.setKeyword"
+      @update:view="store.setView"
       @clear="store.clearKeyword"
     />
 
@@ -105,10 +121,13 @@ onBeforeUnmount(() => {
       :query="store.keyword"
       :is-empty="store.isEmpty"
       :is-no-result="store.isNoResult"
+      :is-favorites-empty="store.isFavoritesEmpty"
       @like="handleLike"
+      @favorite="handleFavorite"
       @delete="handleDelete"
       @clear-search="store.clearKeyword"
       @focus-composer="composer?.focus()"
+      @show-all="store.setView('all')"
     />
   </main>
 

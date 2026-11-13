@@ -709,6 +709,56 @@ textarea {
   box-shadow: 0 4px 12px -6px rgba(255, 55, 95, 0.6);
 }
 
+.filter__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 「全部 / 收藏」分段控件：玻璃底槽 + 选中项蓝色药丸 */
+.filter__tabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-1);
+}
+
+.filter__tab {
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--lyd-ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+  transition: color 0.22s var(--lyd-ease), background-color 0.22s var(--lyd-ease),
+    box-shadow 0.22s var(--lyd-ease);
+}
+
+.filter__tab:hover {
+  color: var(--lyd-ink);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.filter__tab[aria-pressed="true"] {
+  color: #fff;
+  background: linear-gradient(180deg, #3D9BFF 0%, var(--lyd-blue) 55%, var(--lyd-blue-deep) 100%);
+  box-shadow: 0 6px 14px -8px rgba(10, 132, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.filter__tab[aria-pressed="true"]:hover {
+  color: #fff;
+}
+
 .filter__stat {
   padding-left: 16px;
   font-size: 12px;
@@ -898,6 +948,38 @@ textarea {
   animation: pop 0.42s var(--lyd-ease);
 }
 
+/* 计数贴在文案后面，改状态时不跳字宽 */
+.card__like-count {
+  min-width: 1ch;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--lyd-ink-3);
+  transition: color 0.22s var(--lyd-ease);
+}
+
+.card__action--like[aria-pressed="true"] .card__like-count {
+  color: var(--lyd-pink);
+}
+
+.card__action--favorite:hover {
+  color: var(--lyd-amber);
+  background: rgba(255, 159, 10, 0.09);
+  border-color: rgba(255, 159, 10, 0.2);
+}
+
+.card__action--favorite[aria-pressed="true"] {
+  color: var(--lyd-amber);
+  background: rgba(255, 159, 10, 0.14);
+  border-color: rgba(255, 159, 10, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 12px -8px rgba(255, 159, 10, 0.9);
+}
+
+.card__action--favorite[aria-pressed="true"] svg {
+  animation: pop 0.42s var(--lyd-ease);
+}
+
 .card__action--delete:hover {
   color: var(--lyd-red);
   background: rgba(255, 59, 48, 0.08);
@@ -941,6 +1023,12 @@ textarea {
 .no-result__art {
   color: var(--lyd-pink);
   box-shadow: inset 0 1px 0 #fff, 0 10px 24px -14px rgba(255, 55, 95, 0.9);
+}
+
+/* 收藏空态用琥珀色，与卡片上的收藏按钮同一个语义色 */
+.empty--favorites .empty__art {
+  color: var(--lyd-amber);
+  box-shadow: inset 0 1px 0 #fff, 0 10px 24px -14px rgba(255, 159, 10, 0.9);
 }
 
 .empty__art svg,
@@ -1153,9 +1241,28 @@ textarea {
     font-size: 14.5px;
   }
 
+  /* 三个操作在 390px 下允许换行，避免挤出横向滚动 */
+  .card__actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
   /* 触摸设备操作常显 */
   .card__action {
+    padding: 5px 9px;
     color: var(--lyd-ink-2);
+  }
+
+  .filter__meta {
+    gap: 8px;
+  }
+
+  .filter__tab {
+    padding: 5px 12px;
+  }
+
+  .filter__stat {
+    padding-left: 0;
   }
 
   .empty,

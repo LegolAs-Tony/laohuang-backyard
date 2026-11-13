@@ -39,6 +39,11 @@ async function transport(
   }
 }
 
+/** 计数只接受有限非负整数，负数或小数都算脏数据 */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
 /** 服务端返回的东西不可信，逐字段校验后再交给视图，避免 computed 里崩渲染 */
 function isPost(value: unknown): value is Post {
   if (typeof value !== 'object' || value === null) return false
@@ -51,7 +56,9 @@ function isPost(value: unknown): value is Post {
     typeof post.content === 'string' &&
     typeof post.createdAt === 'number' &&
     Number.isFinite(post.createdAt) &&
-    typeof post.liked === 'boolean'
+    typeof post.liked === 'boolean' &&
+    isCount(post.likes) &&
+    typeof post.favorited === 'boolean'
   )
 }
 
@@ -108,11 +115,17 @@ export async function createPost(input: {
   return readPost(await transport(`${API_BASE}/posts`, init, NETWORK_ERROR.write))
 }
 
-export async function updatePostLiked(id: string, liked: boolean): Promise<ApiResult<Post>> {
+/** 只带需要改的字段，服务端按「出现即更新」处理 */
+export interface PostPatch {
+  liked?: boolean
+  favorited?: boolean
+}
+
+export async function updatePost(id: string, patch: PostPatch): Promise<ApiResult<Post>> {
   const init: RequestInit = {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ liked })
+    body: JSON.stringify(patch)
   }
 
   return readPost(

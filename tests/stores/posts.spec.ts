@@ -58,7 +58,9 @@ describe('初始化', () => {
         author: '老黄',
         content: '另一页写入的',
         createdAt: 1_700_000_000_000,
-        liked: false
+        liked: false,
+        likes: 0,
+        favorited: false
       }
     ]
 
@@ -239,6 +241,189 @@ describe('点赞', () => {
     expect(result.ok).toBe(false)
     expect(store.posts[0].liked).toBe(false)
     expect(store.error).toBeTruthy()
+  })
+})
+
+describe('收藏', () => {
+  it('切换收藏并同步到服务端，不影响点赞字段', async () => {
+    const { store, api } = await freshStore([{ id: 'p1', favorited: false, liked: true }])
+
+    const result = await store.toggleFavorite('p1')
+
+    expect(result.ok).toBe(true)
+    expect(store.posts[0].favorited).toBe(true)
+    expect(store.posts[0].liked).toBe(true)
+    expect(store.posts[0].likes).toBe(1)
+    expect(api.calls.at(-1)).toMatchObject({
+      url: '/api/posts/p1',
+      method: 'PATCH',
+      body: { favorited: true }
+    })
+
+    await store.toggleFavorite('p1')
+    expect(store.posts[0].favorited).toBe(false)
+  })
+
+  it('连点两次只发一次请求，不会互相覆盖', async () => {
+    const { store, api } = await freshStore([{ id: 'p1', favorited: false }])
+
+    const [first, second] = await Promise.all([
+      store.toggleFavorite('p1'),
+      store.toggleFavorite('p1')
+    ])
+
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(false)
+    expect(writes(api).filter((call) => call.method === 'PATCH')).toHaveLength(1)
+    expect(store.posts[0].favorited).toBe(true)
+  })
+
+  it('服务端失败时回滚到原状态并写 error', async () => {
+    const { store, api } = await freshStore([{ id: 'p1', favorited: false }])
+    api.failMode = 'server'
+
+    const result = await store.toggleFavorite('p1')
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBeTruthy()
+    expect(store.posts[0].favorited).toBe(false)
+    expect(store.error).toBe(result.error)
+  })
+
+  it('成功后清空上一次的错误提示', async () => {
+    const { store, api } = await freshStore([{ id: 'p1' }])
+    api.failMode = 'server'
+    await store.toggleFavorite('p1')
+    expect(store.error).toBeTruthy()
+
+    api.failMode = 'none'
+    const result = await store.toggleFavorite('p1')
+
+    expect(result.ok).toBe(true)
+    expect(store.error).toBeNull()
+  })
+
+  it('id 不存在时不做任何改动也不发请求', async () => {
+    const { store, api } = await freshStore([{ id: 'p1' }])
+
+    const result = await store.toggleFavorite('nope')
+
+    expect(result.ok).toBe(false)
+    expect(store.posts).toHaveLength(1)
+    expect(store.posts[0].favorited).toBe(false)
+    expect(writes(api)).toHaveLength(0)
+  })
+
+  it('收藏数与收藏列表跟着更新', async () => {
+    const { store } = await freshStore([
+      { id: 'a', favorited: true, createdAt: 1000 },
+      { id: 'b', favorited: false, createdAt: 2000 },
+      { id: 'c', favorited: true, createdAt: 3000 }
+    ])
+
+    expect(store.favoriteCount).toBe(2)
+    expect(store.favoritePosts.map((post) => post.id)).toEqual(['c', 'a'])
+
+    await store.toggleFavorite('b')
+
+    expect(store.favoriteCount).toBe(3)
+    expect(store.favoritePosts.map((post) => post.id)).toEqual(['c', 'b', 'a'])
+  })
+})
+
+describe('视图切换', () => {
+  it('默认停在全部视图', async () => {
+    const { store } = await freshStore([{ id: 'a' }])
+
+    expect(store.view).toBe('all')
+    expect(store.visiblePosts).toHaveLength(1)
+  })
+
+  it('收藏视图只显示已收藏的动态且保持倒序', async () => {
+    const { store } = await freshStore([
+      { id: 'a', favorited: true, createdAt: 1000 },
+      { id: 'b', favorited: false, createdAt: 2000 },
+      { id: 'c', favorited: true, createdAt: 3000 }
+    ])
+
+    store.setView('favorites')
+
+    expect(store.visiblePosts.map((post) => post.id)).toEqual(['c', 'a'])
+    expect(store.matchCount).toBe(2)
+  })
+
+  it('收藏视图下的搜索只在收藏里筛', async () => {
+    const { store } = await freshStore([
+      { id: 'a', favorited: true, content: '番茄红了' },
+      { id: 'b', favorited: false, content: '番茄也红了' }
+    ])
+
+    store.setView('favorites')
+    store.setKeyword('番茄')
+
+    expect(store.visiblePosts.map((post) => post.id)).toEqual(['a'])
+    expect(store.matchCount).toBe(1)
+  })
+
+  it('切回全部视图后恢复完整列表', async () => {
+    const { store } = await freshStore([
+      { id: 'a', favorited: true },
+      { id: 'b', favorited: false }
+    ])
+
+    store.setView('favorites')
+    expect(store.visiblePosts).toHaveLength(1)
+
+    store.setView('all')
+    expect(store.visiblePosts).toHaveLength(2)
+  })
+
+  it('total 始终是全部动态的条数', async () => {
+    const { store } = await freshStore([
+      { id: 'a', favorited: true },
+      { id: 'b', favorited: false }
+    ])
+
+    store.setView('favorites')
+
+    expect(store.total).toBe(2)
+  })
+
+  it('收藏为空时 isFavoritesEmpty 为真且不显示无结果态', async () => {
+    const { store } = await freshStore([{ id: 'a', favorited: false }])
+
+    store.setView('favorites')
+    store.setKeyword('番茄')
+
+    expect(store.isFavoritesEmpty).toBe(true)
+    expect(store.isNoResult).toBe(false)
+    expect(store.isEmpty).toBe(false)
+  })
+
+  it('全部视图下 isFavoritesEmpty 始终为假', async () => {
+    const { store } = await freshStore()
+
+    expect(store.isFavoritesEmpty).toBe(false)
+  })
+
+  it('收藏里有内容但搜索 0 命中时算无结果', async () => {
+    const { store } = await freshStore([{ id: 'a', favorited: true, content: '番茄红了' }])
+
+    store.setView('favorites')
+    store.setKeyword('西瓜')
+
+    expect(store.isFavoritesEmpty).toBe(false)
+    expect(store.isNoResult).toBe(true)
+  })
+
+  it('取消收藏后自动离开收藏列表', async () => {
+    const { store } = await freshStore([{ id: 'a', favorited: true }])
+
+    store.setView('favorites')
+    await store.toggleFavorite('a')
+
+    expect(store.visiblePosts).toEqual([])
+    expect(store.isFavoritesEmpty).toBe(true)
   })
 })
 

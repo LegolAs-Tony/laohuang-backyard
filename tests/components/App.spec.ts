@@ -103,6 +103,62 @@ describe('App 集成', () => {
     expect(api.posts).toHaveLength(0)
   })
 
+  it('点赞后计数跟着变', async () => {
+    const { wrapper, api } = await mountApp([{ id: 'a', content: '番茄红了', liked: false }])
+
+    expect(wrapper.get('.card__like-count').text()).toBe('0')
+
+    await wrapper.get('[data-action="like"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.card__like-count').text()).toBe('1')
+    expect(api.posts[0].likes).toBe(1)
+  })
+
+  it('收藏后切到收藏页签只剩收藏的动态', async () => {
+    const { wrapper, api } = await mountApp([
+      { id: 'a', content: '番茄红了', createdAt: 2000 },
+      { id: 'b', content: '黄瓜熟了', createdAt: 1000 }
+    ])
+
+    await wrapper.findAll('[data-action="favorite"]')[0].trigger('click')
+    await flushPromises()
+    expect(api.posts[0].favorited).toBe(true)
+
+    await wrapper.get('#view-favorites').trigger('click')
+
+    expect(wrapper.findAll('.card')).toHaveLength(1)
+    expect(wrapper.get('.card__body').text()).toBe('番茄红了')
+    expect(wrapper.get('#feed-stat').text()).toBe('收藏 1 条')
+  })
+
+  it('收藏视图里取消收藏后回到收藏空态', async () => {
+    const { wrapper } = await mountApp([{ id: 'a', content: '番茄红了' }])
+
+    await wrapper.get('[data-action="favorite"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('#view-favorites').trigger('click')
+    expect(wrapper.findAll('.card')).toHaveLength(1)
+
+    await wrapper.get('[data-action="favorite"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('.card')).toHaveLength(0)
+    expect(wrapper.get('#favorites-empty').classes()).toContain('is-visible')
+  })
+
+  it('收藏空态的按钮切回全部视图', async () => {
+    const { wrapper } = await mountApp([{ id: 'a', content: '番茄红了' }])
+
+    await wrapper.get('#view-favorites').trigger('click')
+    expect(wrapper.get('#favorites-empty').classes()).toContain('is-visible')
+
+    await wrapper.get('#favorites-empty-action').trigger('click')
+
+    expect(wrapper.findAll('.card')).toHaveLength(1)
+    expect(wrapper.get('#view-all').attributes('aria-pressed')).toBe('true')
+  })
+
   it('窗口重新获得焦点时刷新列表', async () => {
     const { wrapper, api } = await mountApp()
     expect(wrapper.findAll('.card')).toHaveLength(0)
@@ -113,7 +169,9 @@ describe('App 集成', () => {
         author: '老黄',
         content: '别的标签页写的',
         createdAt: 1_700_000_000_000,
-        liked: false
+        liked: false,
+        likes: 0,
+        favorited: false
       }
     ]
     window.dispatchEvent(new Event('focus'))

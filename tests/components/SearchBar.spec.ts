@@ -57,4 +57,66 @@ describe('SearchBar', () => {
 
     expect(wrapper.emitted('clear')).toHaveLength(1)
   })
+
+  it('渲染「全部 / 收藏」两个页签', () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '', total: 3, matchCount: 3 }
+    })
+
+    expect(wrapper.findAll('.filter__tab')).toHaveLength(2)
+    expect(wrapper.get('#view-all').text()).toBe('全部')
+    expect(wrapper.get('#view-favorites').text()).toBe('收藏')
+  })
+
+  it('默认停在「全部」页签', () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '', total: 3, matchCount: 3 }
+    })
+
+    expect(wrapper.get('#view-all').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('#view-favorites').attributes('aria-pressed')).toBe('false')
+  })
+
+  it('收藏视图时对应页签 aria-pressed=true', () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '', total: 3, matchCount: 1, view: 'favorites', favoriteCount: 1 }
+    })
+
+    expect(wrapper.get('#view-all').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('#view-favorites').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('点收藏页签派发 update:view', async () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '', total: 3, matchCount: 3 }
+    })
+    await wrapper.get('#view-favorites').trigger('click')
+
+    expect(wrapper.emitted('update:view')?.[0]).toEqual(['favorites'])
+  })
+
+  it('点全部页签派发 update:view', async () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '', total: 3, matchCount: 3, view: 'favorites', favoriteCount: 2 }
+    })
+    await wrapper.get('#view-all').trigger('click')
+
+    expect(wrapper.emitted('update:view')?.[0]).toEqual(['all'])
+  })
+
+  it('收藏视图未搜索时统计收藏条数', () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '', total: 3, matchCount: 2, view: 'favorites', favoriteCount: 2 }
+    })
+
+    expect(wrapper.get('#feed-stat').text()).toBe('收藏 2 条')
+  })
+
+  it('收藏视图有搜索词时追加命中数', () => {
+    const wrapper = mount(SearchBar, {
+      props: { modelValue: '番茄', total: 3, matchCount: 1, view: 'favorites', favoriteCount: 2 }
+    })
+
+    expect(wrapper.get('#feed-stat').text()).toBe('收藏 2 条 · 命中 1 条')
+  })
 })

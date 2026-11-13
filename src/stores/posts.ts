@@ -1,8 +1,8 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { createPost, deletePost, fetchPosts, updatePostLiked } from '@/lib/api'
+import { createPost, deletePost, fetchPosts, updatePost } from '@/lib/api'
 import { MAX_AUTHOR, MAX_CONTENT, matchesQuery } from '@/lib/posts'
-import type { Post } from '@/lib/posts'
+import type { Post, PostView } from '@/lib/posts'
 import { readAuthor, writeAuthor } from '@/lib/preferences'
 
 export interface AddPostPayload {
@@ -22,26 +22,43 @@ export const usePostsStore = defineStore('posts', () => {
   const author = ref(readAuthor())
   const keyword = ref('')
   const error = ref<string | null>(null)
-  // 正在请求中的点赞 id，防止连点重复提交
+  // 当前列表视图：全部 / 只看收藏
+  const view = ref<PostView>('all')
+  // 正在请求中的点赞 / 收藏 id，防止连点重复提交；两者互不阻塞
   const liking = new Set<string>()
+  const favoriting = new Set<string>()
 
   /* ------------------------------------------------------------ 派生状态 */
   const sortedPosts = computed(() =>
     [...posts.value].sort((a, b) => b.createdAt - a.createdAt)
   )
 
+  const favoritePosts = computed(() => sortedPosts.value.filter((post) => post.favorited))
+  const favoriteCount = computed(() => favoritePosts.value.length)
+
+  /** 先按视图取范围，再按关键词过滤，顺序不能反（否则统计与空态都会错） */
+  const scopedPosts = computed(() =>
+    view.value === 'favorites' ? favoritePosts.value : sortedPosts.value
+  )
+
   const visiblePosts = computed(() => {
-    if (!keyword.value.trim()) return sortedPosts.value
-    return sortedPosts.value.filter((post) => matchesQuery(post, keyword.value))
+    if (!keyword.value.trim()) return scopedPosts.value
+    return scopedPosts.value.filter((post) => matchesQuery(post, keyword.value))
   })
 
   const total = computed(() => posts.value.length)
   const matchCount = computed(() => visiblePosts.value.length)
   const isEmpty = computed(() => posts.value.length === 0)
-  const isNoResult = computed(
-    () => !isEmpty.value && keyword.value.trim() !== '' && matchCount.value === 0
-  )
   const isFiltering = computed(() => keyword.value.trim() !== '')
+  const isFavoritesEmpty = computed(() => view.value === 'favorites' && favoriteCount.value === 0)
+  // 收藏为空时由专门的空态接管，不再叠一个「没搜到」
+  const isNoResult = computed(
+    () =>
+      !isFavoritesEmpty.value &&
+      scopedPosts.value.length > 0 &&
+      isFiltering.value &&
+      matchCount.value === 0
+  )
 
   /* -------------------------------------------------------------- 行为层 */
   async function load(): Promise<void> {
@@ -95,7 +112,11 @@ export const usePostsStore = defineStore('posts', () => {
     }
     error.value = null
 
-    // 当前筛选会把这天新内容藏起来时，顺手清空筛选，避免"发出去了却看不见"
+    // 当前筛选或收藏视图会把新内容藏起来时，顺手切回全部，避免"发出去了却看不见"
+    if (view.value === 'favorites') {
+      view.value = 'all'
+    }
+
     if (keyword.value.trim() && !matchesQuery(result.data, keyword.value)) {
       keyword.value = ''
     }
@@ -112,7 +133,7 @@ export const usePostsStore = defineStore('posts', () => {
 
     liking.add(id)
     try {
-      const result = await updatePostLiked(id, !target.liked)
+      const result = await updatePost(id, { liked: !target.liked })
 
       if (!result.ok) {
         error.value = result.error
@@ -124,6 +145,30 @@ export const usePostsStore = defineStore('posts', () => {
       return { ok: true }
     } finally {
       liking.delete(id)
+    }
+  }
+
+  async function toggleFavorite(id: string): Promise<ActionResult> {
+    const target = posts.value.find((post) => post.id === id)
+    if (!target) return { ok: false }
+
+    // 与点赞同款连点保护：在途期间忽略后续点击，失败时不留下半截状态
+    if (favoriting.has(id)) return { ok: false }
+
+    favoriting.add(id)
+    try {
+      const result = await updatePost(id, { favorited: !target.favorited })
+
+      if (!result.ok) {
+        error.value = result.error
+        return { ok: false, error: result.error }
+      }
+
+      posts.value = posts.value.map((post) => (post.id === id ? result.data : post))
+      error.value = null
+      return { ok: true }
+    } finally {
+      favoriting.delete(id)
     }
   }
 
@@ -144,6 +189,10 @@ export const usePostsStore = defineStore('posts', () => {
     keyword.value = value
   }
 
+  function setView(next: PostView): void {
+    view.value = next
+  }
+
   function clearKeyword(): void {
     keyword.value = ''
   }
@@ -158,22 +207,28 @@ export const usePostsStore = defineStore('posts', () => {
     author,
     keyword,
     error,
+    view,
     // 派生
     sortedPosts,
+    favoritePosts,
+    favoriteCount,
     visiblePosts,
     total,
     matchCount,
     isEmpty,
     isNoResult,
+    isFavoritesEmpty,
     isFiltering,
     // 行为
     init,
     reload,
     addPost,
     toggleLike,
+    toggleFavorite,
     removePost,
     setKeyword,
     clearKeyword,
+    setView,
     clearError
   }
 })

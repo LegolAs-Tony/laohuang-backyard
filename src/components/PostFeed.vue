@@ -2,18 +2,24 @@
 import PostCard from '@/components/PostCard.vue'
 import type { Post } from '@/lib/posts'
 
-defineProps<{
-  posts: Post[]
-  query: string
-  isEmpty: boolean
-  isNoResult: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    posts: Post[]
+    query: string
+    isEmpty: boolean
+    isNoResult: boolean
+    isFavoritesEmpty?: boolean
+  }>(),
+  { isFavoritesEmpty: false }
+)
 
 const emit = defineEmits<{
   like: [id: string]
+  favorite: [id: string]
   delete: [id: string]
   'clear-search': []
   'focus-composer': []
+  'show-all': []
 }>()
 </script>
 
@@ -28,11 +34,17 @@ const emit = defineEmits<{
         :post="post"
         :query="query"
         @like="emit('like', $event)"
+        @favorite="emit('favorite', $event)"
         @delete="emit('delete', $event)"
       />
     </div>
 
-    <div id="empty" class="empty" :class="{ 'is-visible': isEmpty }" role="status">
+    <div
+      id="empty"
+      class="empty"
+      :class="{ 'is-visible': props.isEmpty && !props.isFavoritesEmpty }"
+      role="status"
+    >
       <span class="empty__art" aria-hidden="true">
         <svg viewBox="0 0 64 64" fill="none">
           <path
@@ -50,6 +62,33 @@ const emit = defineEmits<{
       <p class="empty__text">院子还空着，种下第一条吧</p>
       <button id="empty-action" class="btn btn--ghost" type="button" @click="emit('focus-composer')">
         写点什么
+      </button>
+    </div>
+
+    <div
+      id="favorites-empty"
+      class="empty empty--favorites"
+      :class="{ 'is-visible': props.isFavoritesEmpty }"
+      role="status"
+    >
+      <span class="empty__art" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none">
+          <path
+            d="M32 12.4l6.9 14 15.4 2.2-11.2 10.9 2.7 15.4L32 47.6 18.2 54.9l2.7-15.4L9.7 28.6l15.4-2.2L32 12.4Z"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </span>
+      <p class="empty__text">还没有收藏，去院子里逛逛</p>
+      <button
+        id="favorites-empty-action"
+        class="btn btn--ghost"
+        type="button"
+        @click="emit('show-all')"
+      >
+        看全部动态
       </button>
     </div>
 

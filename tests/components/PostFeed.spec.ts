@@ -10,6 +10,8 @@ function makePost(id: string, overrides: Partial<Post> = {}): Post {
     content: `第 ${id} 条`,
     createdAt: 1_700_000_000_000,
     liked: false,
+    likes: 0,
+    favorited: false,
     ...overrides
   }
 }
@@ -46,6 +48,52 @@ describe('PostFeed', () => {
     expect(wrapper.get('#empty').classes()).not.toContain('is-visible')
   })
 
+  it('收藏为空时展示收藏空态', () => {
+    const wrapper = mount(PostFeed, {
+      props: {
+        posts: [],
+        query: '',
+        isEmpty: false,
+        isNoResult: false,
+        isFavoritesEmpty: true
+      }
+    })
+
+    expect(wrapper.get('#favorites-empty').classes()).toContain('is-visible')
+    expect(wrapper.get('#empty').classes()).not.toContain('is-visible')
+    expect(wrapper.get('#no-result').classes()).not.toContain('is-visible')
+  })
+
+  it('非收藏视图时收藏空态隐藏', () => {
+    const wrapper = mount(PostFeed, {
+      props: {
+        posts: [makePost('a')],
+        query: '',
+        isEmpty: false,
+        isNoResult: false,
+        isFavoritesEmpty: false
+      }
+    })
+
+    expect(wrapper.get('#favorites-empty').classes()).not.toContain('is-visible')
+  })
+
+  it('收藏空态的按钮请求切回全部视图', async () => {
+    const wrapper = mount(PostFeed, {
+      props: {
+        posts: [],
+        query: '',
+        isEmpty: false,
+        isNoResult: false,
+        isFavoritesEmpty: true
+      }
+    })
+
+    await wrapper.get('#favorites-empty-action').trigger('click')
+
+    expect(wrapper.emitted('show-all')).toHaveLength(1)
+  })
+
   it('把卡片的点赞事件向上转发', async () => {
     const wrapper = mount(PostFeed, {
       props: {
@@ -59,6 +107,21 @@ describe('PostFeed', () => {
     await wrapper.get('[data-action="like"]').trigger('click')
 
     expect(wrapper.emitted('like')?.[0]).toEqual(['a'])
+  })
+
+  it('把卡片的收藏事件向上转发', async () => {
+    const wrapper = mount(PostFeed, {
+      props: {
+        posts: [makePost('a')],
+        query: '',
+        isEmpty: false,
+        isNoResult: false
+      }
+    })
+
+    await wrapper.get('[data-action="favorite"]').trigger('click')
+
+    expect(wrapper.emitted('favorite')?.[0]).toEqual(['a'])
   })
 
   it('把卡片的删除事件向上转发', async () => {

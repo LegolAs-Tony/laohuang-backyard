@@ -10,6 +10,8 @@ function makePost(overrides: Partial<Post> = {}): Post {
     content: '院子里的番茄红了',
     createdAt: Date.now() - 3 * 60 * 1000,
     liked: false,
+    likes: 0,
+    favorited: false,
     ...overrides
   }
 }
@@ -60,11 +62,48 @@ describe('PostCard', () => {
     expect(like.text()).toContain('已赞')
   })
 
+  it('点赞按钮内渲染点赞数', () => {
+    const wrapper = mount(PostCard, { props: { post: makePost({ liked: true, likes: 3 }) } })
+
+    expect(wrapper.get('[data-action="like"] .card__like-count').text()).toBe('3')
+  })
+
+  it('点赞数为 0 时也照常渲染', () => {
+    const wrapper = mount(PostCard, { props: { post: makePost({ likes: 0 }) } })
+
+    expect(wrapper.get('.card__like-count').text()).toBe('0')
+  })
+
+  it('未收藏时显示「收藏」且 aria-pressed=false', () => {
+    const wrapper = mount(PostCard, { props: { post: makePost({ favorited: false }) } })
+    const favorite = wrapper.get('[data-action="favorite"]')
+
+    expect(favorite.attributes('aria-pressed')).toBe('false')
+    expect(favorite.text()).toBe('收藏')
+    expect(favorite.get('svg path').attributes('fill')).toBe('none')
+  })
+
+  it('已收藏时显示「已收藏」且星形填充', () => {
+    const wrapper = mount(PostCard, { props: { post: makePost({ favorited: true }) } })
+    const favorite = wrapper.get('[data-action="favorite"]')
+
+    expect(favorite.attributes('aria-pressed')).toBe('true')
+    expect(favorite.text()).toBe('已收藏')
+    expect(favorite.get('svg path').attributes('fill')).toBe('currentColor')
+  })
+
   it('点击点赞派发 like 事件并带上 id', async () => {
     const wrapper = mount(PostCard, { props: { post: makePost() } })
     await wrapper.get('[data-action="like"]').trigger('click')
 
     expect(wrapper.emitted('like')?.[0]).toEqual(['p1'])
+  })
+
+  it('点击收藏派发 favorite 事件并带上 id', async () => {
+    const wrapper = mount(PostCard, { props: { post: makePost() } })
+    await wrapper.get('[data-action="favorite"]').trigger('click')
+
+    expect(wrapper.emitted('favorite')?.[0]).toEqual(['p1'])
   })
 
   it('删除需要二次确认', async () => {
