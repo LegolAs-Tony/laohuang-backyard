@@ -76,22 +76,24 @@ npm run test:watch   # 1. 写一个失败的测试（红）
                      # 3. 重构，测试保持全绿
 ```
 
-当前 **12 个测试文件 / 134 个用例全部通过**：
+当前 **12 个测试文件 / 204 个用例全部通过**：
 
 | 测试文件 | 覆盖内容 |
 | --- | --- |
 | `tests/unit/time.spec.ts` | 相对时间分档、跨天、跨年、未来时间 |
 | `tests/unit/highlight.spec.ts` | 关键词切片、大小写、多次命中、不丢字 |
-| `tests/unit/api.spec.ts` | 四个请求方法的 URL/method/body、错误文案透出、网络异常兜底、结构校验、204 空体 |
+| `tests/unit/api.spec.ts` | 请求方法的 URL/method/body、错误文案透出、网络异常兜底、结构校验、`likes`/`favorited` 脏数据拒收、204 空体 |
 | `tests/unit/preferences.spec.ts` | 署名记忆、存储被禁用 / 抛错时的静默降级 |
-| `tests/stores/posts.spec.ts` | 初始化 / 拉取失败 / 发布 / 本地校验不发请求 / 回滚 / 点赞 / 删除 / 排序 / 筛选 / 双空态 |
-| `tests/server/store.spec.ts` | 内存 store 的创建、裁剪、校验、倒序、点赞、删除、清空、实例隔离 |
-| `tests/server/posts.api.spec.ts` | 六个接口的状态码、响应体、错误码、非法 JSON、未知路由 |
+| `tests/stores/posts.spec.ts` | 初始化 / 拉取失败 / 发布 / 本地校验不发请求 / 回滚 / 点赞 / 收藏 / 视图切换 / 删除 / 排序 / 筛选 / 三种空态 |
+| `tests/server/store.spec.ts` | 内存 store 的创建、裁剪、校验、倒序、点赞计数（幂等、不为负）、收藏、删除、清空、实例隔离 |
+| `tests/server/posts.api.spec.ts` | 六个接口的状态码、响应体、错误码、PATCH 双字段、非法 JSON / 空补丁、未知路由 |
 | `tests/components/PostComposer.spec.ts` | 计数、超限禁用、空内容校验、提交载荷、快捷键、`reset()` |
-| `tests/components/PostCard.spec.ts` | 署名 / 正文 / `<time>`、高亮、点赞态、二次确认删除、头像变体 |
-| `tests/components/SearchBar.spec.ts` | 统计文案、清除按钮显隐、`v-model` 同步、`Esc` |
-| `tests/components/PostFeed.spec.ts` | 列表渲染、两种空态、事件上抛 |
-| `tests/components/App.spec.ts` | 端到端集成：渲染、发布、筛选、点赞、删除、聚焦刷新 |
+| `tests/components/PostCard.spec.ts` | 署名 / 正文 / `<time>`、高亮、点赞态与计数、收藏态、二次确认删除、头像变体 |
+| `tests/components/SearchBar.spec.ts` | 全部 / 收藏页签、两种统计文案、清除按钮显隐、`v-model` 同步、`Esc` |
+| `tests/components/PostFeed.spec.ts` | 列表渲染、三种空态（无内容 / 没搜到 / 没收藏）、事件上抛 |
+| `tests/components/App.spec.ts` | 端到端集成：渲染、发布、筛选、点赞计数、收藏与只看收藏、删除、聚焦刷新 |
+
+> Node 26 自带需要 `--localstorage-file` 才可用的全局 `localStorage`，会遮蔽 jsdom 的实现；`tests/setup.ts` 检测到没有可用 Storage 时补一个内存实现，保证各 Node 版本下用例一致。
 
 ## 目录结构
 
