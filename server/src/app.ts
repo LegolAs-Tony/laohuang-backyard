@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { createPostStore } from './store'
-import type { PostStore } from './store'
+import type { PostPatch, PostStore } from './store'
 
 const MESSAGES = {
   invalid_json: '请求格式不对，请重试。',
@@ -67,11 +67,25 @@ export function createApp(options: AppOptions = {}): Hono {
   api.patch('/posts/:id', async (c) => {
     const body = await readJsonBody(c)
     if (!body.ok) return fail(c, 400, 'invalid_json')
-    if (!isPlainObject(body.value) || typeof body.value.liked !== 'boolean') {
-      return fail(c, 400, 'invalid_body')
-    }
+    if (!isPlainObject(body.value)) return fail(c, 400, 'invalid_body')
 
-    const post = store.setLiked(c.req.param('id'), body.value.liked)
+    const value = body.value
+    const hasLiked = Object.prototype.hasOwnProperty.call(value, 'liked')
+    const hasFavorited = Object.prototype.hasOwnProperty.call(value, 'favorited')
+
+    // 至少要给一个字段，否则无从更新
+    if (!hasLiked && !hasFavorited) return fail(c, 400, 'invalid_body')
+
+    // 字段给了但类型不对是形状问题；未知字段一律忽略
+    if (hasLiked && typeof value.liked !== 'boolean') return fail(c, 400, 'invalid_body')
+    if (hasFavorited && typeof value.favorited !== 'boolean') return fail(c, 400, 'invalid_body')
+
+    const patch: PostPatch = {}
+    if (hasLiked) patch.liked = value.liked as boolean
+    if (hasFavorited) patch.favorited = value.favorited as boolean
+
+    // 只改一次，计数增减与幂等由 store 负责
+    const post = store.update(c.req.param('id'), patch)
     if (!post) return fail(c, 404, 'not_found')
 
     return c.json({ post })

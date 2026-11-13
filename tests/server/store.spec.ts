@@ -30,6 +30,8 @@ describe('内存 store · 基础', () => {
     expect(result.post.content).toBe('今天种了番茄')
     expect(typeof result.post.createdAt).toBe('number')
     expect(result.post.liked).toBe(false)
+    expect(result.post.likes).toBe(0)
+    expect(result.post.favorited).toBe(false)
     expect(store.count()).toBe(1)
   })
 
@@ -44,7 +46,9 @@ describe('内存 store · 基础', () => {
       author: 'x',
       content: 'x',
       createdAt: 0,
-      liked: false
+      liked: false,
+      likes: 0,
+      favorited: false
     })
 
     expect(store.list()).toHaveLength(1)
@@ -180,5 +184,188 @@ describe('内存 store · 排序与变更', () => {
 
     expect(first.count()).toBe(1)
     expect(second.count()).toBe(0)
+  })
+})
+
+describe('内存 store · 点赞计数', () => {
+  function seed(store: ReturnType<typeof createPostStore>): string {
+    const created = store.create({ author: '老黄', content: '点赞我' })
+    if (!created.ok) throw new Error('创建失败')
+    return created.post.id
+  }
+
+  it('点赞使 likes 加一，取消使 likes 减一', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    expect(store.setLiked(id, true)?.likes).toBe(1)
+    expect(store.setLiked(id, false)?.likes).toBe(0)
+  })
+
+  it('重复提交同一个值幂等，likes 不会累加或重复扣减', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    store.setLiked(id, true)
+    expect(store.setLiked(id, true)?.likes).toBe(1)
+    expect(store.setLiked(id, true)?.likes).toBe(1)
+    expect(store.list()[0].likes).toBe(1)
+  })
+
+  it('未点赞时取消点赞不会把 likes 变成负数', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    expect(store.setLiked(id, false)?.likes).toBe(0)
+    expect(store.setLiked(id, false)?.likes).toBe(0)
+    expect(store.list()[0].likes).toBe(0)
+  })
+
+  it('liked 为 true 时 likes 至少为 1，两者保持一致', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    store.setLiked(id, true)
+    const post = store.list()[0]
+    expect(post.liked).toBe(true)
+    expect(post.likes).toBeGreaterThanOrEqual(1)
+
+    store.setLiked(id, false)
+    const cleared = store.list()[0]
+    expect(cleared.liked).toBe(false)
+    expect(cleared.likes).toBe(0)
+  })
+
+  it('setLiked 返回的副本改动不会污染内部数据', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    const liked = store.setLiked(id, true)
+    if (!liked) throw new Error('点赞失败')
+    liked.likes = 99
+    liked.liked = false
+
+    expect(store.list()[0].likes).toBe(1)
+    expect(store.list()[0].liked).toBe(true)
+  })
+})
+
+describe('内存 store · 收藏', () => {
+  it('setFavorited 切换收藏并暴露在 list 里', () => {
+    const store = createPostStore()
+    const created = store.create({ author: '老黄', content: '收我' })
+    if (!created.ok) throw new Error('创建失败')
+
+    const favorited = store.setFavorited(created.post.id, true)
+    expect(favorited?.favorited).toBe(true)
+    expect(store.list()[0].favorited).toBe(true)
+
+    expect(store.setFavorited(created.post.id, false)?.favorited).toBe(false)
+    expect(store.list()[0].favorited).toBe(false)
+  })
+
+  it('setFavorited 幂等：重复提交同一个值结果不变', () => {
+    const store = createPostStore()
+    const created = store.create({ author: '老黄', content: '收我' })
+    if (!created.ok) throw new Error('创建失败')
+
+    store.setFavorited(created.post.id, true)
+    expect(store.setFavorited(created.post.id, true)?.favorited).toBe(true)
+    expect(store.setFavorited(created.post.id, false)?.favorited).toBe(false)
+    expect(store.setFavorited(created.post.id, false)?.favorited).toBe(false)
+  })
+
+  it('setFavorited 不影响点赞状态与计数', () => {
+    const store = createPostStore()
+    const created = store.create({ author: '老黄', content: '收我' })
+    if (!created.ok) throw new Error('创建失败')
+
+    store.setLiked(created.post.id, true)
+    const post = store.setFavorited(created.post.id, true)
+    expect(post?.liked).toBe(true)
+    expect(post?.likes).toBe(1)
+  })
+
+  it('setFavorited 找不到 id 返回 null', () => {
+    const store = createPostStore()
+    expect(store.setFavorited('nope', true)).toBeNull()
+  })
+})
+
+describe('内存 store · update 合并更新', () => {
+  function seed(store: ReturnType<typeof createPostStore>): string {
+    const created = store.create({ author: '老黄', content: '改我' })
+    if (!created.ok) throw new Error('创建失败')
+    return created.post.id
+  }
+
+  it('可同时修改 liked 与 favorited，并联动 likes 计数', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    const post = store.update(id, { liked: true, favorited: true })
+
+    expect(post?.liked).toBe(true)
+    expect(post?.favorited).toBe(true)
+    expect(post?.likes).toBe(1)
+    expect(store.list()[0]).toMatchObject({ liked: true, favorited: true, likes: 1 })
+  })
+
+  it('只给 favorited 时不动 liked 与 likes', () => {
+    const store = createPostStore()
+    const id = seed(store)
+    store.setLiked(id, true)
+
+    const post = store.update(id, { favorited: true })
+
+    expect(post?.favorited).toBe(true)
+    expect(post?.liked).toBe(true)
+    expect(post?.likes).toBe(1)
+  })
+
+  it('只给 liked 时不动 favorited', () => {
+    const store = createPostStore()
+    const id = seed(store)
+    store.setFavorited(id, true)
+
+    const post = store.update(id, { liked: true })
+
+    expect(post?.liked).toBe(true)
+    expect(post?.favorited).toBe(true)
+    expect(post?.likes).toBe(1)
+  })
+
+  it('重复提交相同值幂等', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    store.update(id, { liked: true, favorited: true })
+    const again = store.update(id, { liked: true, favorited: true })
+
+    expect(again?.likes).toBe(1)
+    expect(again?.liked).toBe(true)
+    expect(again?.favorited).toBe(true)
+  })
+
+  it('update 返回副本，改动不污染内部数据，且不改变其他字段', () => {
+    const store = createPostStore()
+    const id = seed(store)
+
+    const post = store.update(id, { liked: true })
+    if (!post) throw new Error('更新失败')
+
+    expect(post.content).toBe('改我')
+    expect(post.author).toBe('老黄')
+
+    post.likes = 42
+    post.content = '被外部改掉了'
+
+    expect(store.list()[0].likes).toBe(1)
+    expect(store.list()[0].content).toBe('改我')
+  })
+
+  it('update 找不到 id 返回 null', () => {
+    const store = createPostStore()
+    expect(store.update('nope', { liked: true })).toBeNull()
   })
 })

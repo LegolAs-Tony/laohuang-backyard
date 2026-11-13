@@ -56,7 +56,13 @@ describe('POST /api/posts', () => {
 
     expect(response.status).toBe(201)
     const { post } = (await response.json()) as { post: Record<string, unknown> }
-    expect(post).toMatchObject({ author: '老黄', content: '今天种了番茄', liked: false })
+    expect(post).toMatchObject({
+      author: '老黄',
+      content: '今天种了番茄',
+      liked: false,
+      likes: 0,
+      favorited: false
+    })
     expect(typeof post.id).toBe('string')
     expect(typeof post.createdAt).toBe('number')
 
@@ -199,6 +205,168 @@ describe('PATCH /api/posts/:id', () => {
         error: { code: 'invalid_body', message: '请求格式不对，请重试。' }
       })
     }
+  })
+
+  it('点赞时 likes 计数加一，取消时减一', async () => {
+    const id = await seedPost()
+
+    const liked = await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ liked: true })
+    })
+    const likedPost = ((await liked.json()) as { post: Record<string, unknown> }).post
+    expect(liked.status).toBe(200)
+    expect(likedPost).toMatchObject({ liked: true, likes: 1 })
+
+    const unliked = await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ liked: false })
+    })
+    const unlikedPost = ((await unliked.json()) as { post: Record<string, unknown> }).post
+    expect(unlikedPost).toMatchObject({ liked: false, likes: 0 })
+    expect((await listPosts()).posts[0]).toMatchObject({ liked: false, likes: 0 })
+  })
+
+  it('重复提交相同 liked 值幂等，likes 不重复累加', async () => {
+    const id = await seedPost()
+    const body = JSON.stringify({ liked: true })
+
+    await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body
+    })
+    const again = await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body
+    })
+
+    expect(((await again.json()) as { post: Record<string, unknown> }).post.likes).toBe(1)
+  })
+
+  it('只给 favorited 时收藏成功且不影响 liked', async () => {
+    const id = await seedPost()
+
+    const response = await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ favorited: true })
+    })
+
+    expect(response.status).toBe(200)
+    const { post } = (await response.json()) as { post: Record<string, unknown> }
+    expect(post).toMatchObject({ favorited: true, liked: false, likes: 0 })
+    expect((await listPosts()).posts[0].favorited).toBe(true)
+  })
+
+  it('收藏可以取消，重复取消幂等', async () => {
+    const id = await seedPost()
+    const patch = (favorited: boolean) =>
+      app.request(`/api/posts/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ favorited })
+      })
+
+    await patch(true)
+    expect(((await (await patch(true)).json()) as { post: Record<string, unknown> }).post.favorited).toBe(true)
+    expect(((await (await patch(false)).json()) as { post: Record<string, unknown> }).post.favorited).toBe(false)
+    expect(((await (await patch(false)).json()) as { post: Record<string, unknown> }).post.favorited).toBe(false)
+  })
+
+  it('同时给 liked 与 favorited 时一次更新两个字段', async () => {
+    const id = await seedPost()
+
+    const response = await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ liked: true, favorited: true })
+    })
+
+    expect(response.status).toBe(200)
+    const { post } = (await response.json()) as { post: Record<string, unknown> }
+    expect(post).toMatchObject({ liked: true, likes: 1, favorited: true })
+    expect((await listPosts()).posts[0]).toMatchObject({ liked: true, likes: 1, favorited: true })
+  })
+
+  it('两个字段都不给返回 400 invalid_body 且不改状态', async () => {
+    const id = await seedPost()
+
+    for (const body of [{}, { liked: undefined, favorited: undefined }]) {
+      const response = await app.request(`/api/posts/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({
+        error: { code: 'invalid_body', message: '请求格式不对，请重试。' }
+      })
+    }
+
+    expect((await listPosts()).posts[0]).toMatchObject({ liked: false, favorited: false, likes: 0 })
+  })
+
+  it('liked 或 favorited 不是 boolean 时返回 400 invalid_body', async () => {
+    const id = await seedPost()
+
+    for (const body of [
+      { liked: 'yes' },
+      { liked: 1 },
+      { liked: null },
+      { favorited: 'yes' },
+      { favorited: 0 },
+      { liked: true, favorited: 'yes' }
+    ]) {
+      const response = await app.request(`/api/posts/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({
+        error: { code: 'invalid_body', message: '请求格式不对，请重试。' }
+      })
+    }
+
+    expect((await listPosts()).posts[0]).toMatchObject({ liked: false, likes: 0, favorited: false })
+  })
+
+  it('未知字段被忽略，仍然按已知字段更新并返回 200', async () => {
+    const id = await seedPost()
+
+    const response = await app.request(`/api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ favorited: true, likes: 99, author: '别人', nope: 'x' })
+    })
+
+    expect(response.status).toBe(200)
+    const { post } = (await response.json()) as { post: Record<string, unknown> }
+    expect(post).toMatchObject({ favorited: true, liked: false, likes: 0, author: '老黄' })
+  })
+
+  it('收藏与点赞都作用于对应 id，不影响其他动态', async () => {
+    const first = await seedPost('第一条')
+    const second = await seedPost('第二条')
+
+    await app.request(`/api/posts/${first}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ liked: true, favorited: true })
+    })
+
+    const { posts } = await listPosts()
+    const target = posts.find((post) => post.id === first)
+    const other = posts.find((post) => post.id === second)
+
+    expect(target).toMatchObject({ liked: true, likes: 1, favorited: true })
+    expect(other).toMatchObject({ liked: false, likes: 0, favorited: false })
   })
 })
 
